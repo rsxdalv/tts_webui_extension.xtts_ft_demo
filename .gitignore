@@ -1,0 +1,5 @@
+extension_xtts_ft_demo/log.out
+
+# build
+__pycache__/
+extension_xtts_ft_demo.egg-info/
