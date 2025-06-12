@@ -24,7 +24,7 @@ setuptools.setup(
     install_requires=[
         # "audiocraft>=1.2",
         # "pytaglib",
-        "coqui-tts",
+        "coqui-tts==0.26.0",
         "faster_whisper",
         
     ],
