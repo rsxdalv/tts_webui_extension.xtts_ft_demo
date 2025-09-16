@@ -18,18 +18,17 @@ from TTS.tts.models.xtts import Xtts
 def extension__tts_generation_webui():
     main_ui()
     return {
-        "package_name": "extension_xtts_ft_demo",
+        "package_name": "tts_webui_extension.xtts_ft_demo",
         "name": "XTTS Fine-tuning Demo",
-        "version": "0.0.1",
-        "requirements": "git+https://github.com/rsxdalv/extension_xtts_ft_demo@main",
+        "requirements": "git+https://github.com/rsxdalv/tts_webui_extension.xtts_ft_demo@main",
         "description": "XTTS fine-tuning demo",
         "extension_type": "interface",
         "extension_class": "tools",
         "author": "rsxdalv",
         "extension_author": "rsxdalv",
         "license": "MPL-2.0",
-        "website": "https://github.com/rsxdalv/extension_xtts_ft_demo",
-        "extension_website": "https://github.com/rsxdalv/extension_xtts_ft_demo",
+        "website": "https://github.com/rsxdalv/tts_webui_extension.xtts_ft_demo",
+        "extension_website": "https://github.com/rsxdalv/tts_webui_extension.xtts_ft_demo",
         "extension_platform_version": "0.0.1",
     }
 
