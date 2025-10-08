@@ -116,7 +116,11 @@ def _read_rows_from_metadata(content):
     reader = csv.DictReader(io.StringIO(stripped), delimiter=chosen)
     if reader.fieldnames and all(name.strip() for name in reader.fieldnames):
         for row in reader:
-            rows.append({k.strip(): v for k, v in row.items()})
+            rows.append({
+                (k.strip() if k is not None else ""):
+                (v.strip() if isinstance(v, str) else v if v is not None else "")
+                for k, v in row.items()
+            })
         return rows
 
     # No header present, interpret each row manually.
@@ -317,11 +321,6 @@ def main_ui():
             label="Output path (where data and checkpoints will be saved):",
             value=args.out_path,
         )
-        # upload_file = gr.Audio(
-        #     sources="upload",
-        #     label="Select here the audio files that you want to use for XTTS trainining !",
-        #     type="filepath",
-        # )
         upload_file = gr.File(
             file_count="multiple",
             label="Select here the audio files that you want to use for XTTS trainining (Supported formats: wav, mp3, and flac)",
@@ -352,22 +351,18 @@ def main_ui():
         progress_data = gr.Label(label="Progress:")
         logs = gr.Textbox(
             label="Logs:",
-            # label="Logs (Disabled for now):",
             interactive=False,
             value=read_logs,
             every=1,
         )
-        # demo.load(read_logs, None, logs, every=1)
 
         prompt_compute_btn = gr.Button(value="Step 1 - Create dataset")
 
-        def preprocess_dataset(
-            audio_path, language, out_path, progress=gr.Progress(track_tqdm=True)
-        ):
+        def preprocess_dataset(audio_path, language, out_path):
             clear_gpu_cache()
             out_path = os.path.join(out_path, "dataset")
             os.makedirs(out_path, exist_ok=True)
-            progress_adapter = _ProgressAdapter(progress) if progress else None
+            progress_adapter = None  # Нет поддержки прогресса
             if audio_path is None:
                 return (
                     "You should provide one or multiple audio files! If you provided it, probably the upload of the files is not finished yet!",
@@ -440,13 +435,10 @@ def main_ui():
         progress_train = gr.Label(label="Progress:")
         logs_tts_train = gr.Textbox(
             label="Logs:",
-            # label="Logs (Disabled for now):",
             interactive=False,
             value=read_logs,
             every=1,
         )
-        # logs_tts_train
-        # demo.load(read_logs, None, logs_tts_train, every=1)
         train_btn = gr.Button(value="Step 2 - Run the training")
 
         def train_model(
