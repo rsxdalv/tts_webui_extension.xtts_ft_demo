@@ -1,5 +1,9 @@
 import argparse
+import csv
+import io
+import json
 import logging
+import math
 import os
 import sys
 import tempfile
@@ -40,6 +44,172 @@ def clear_gpu_cache():
 
 
 XTTS_MODEL = None
+
+
+class _ProgressAdapter:
+    """Gradio progress helper that makes tqdm totals compatible with pydantic."""
+
+    def __init__(self, progress):
+        self._progress = progress
+
+    def tqdm(self, *args, **kwargs):
+        if "total" in kwargs and isinstance(kwargs["total"], float):
+            kwargs["total"] = math.ceil(kwargs["total"])
+        return self._progress.tqdm(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._progress, name)
+
+
+def _read_rows_from_metadata(content):
+    rows = []
+    stripped = content.strip()
+    if not stripped:
+        return rows
+
+    # Try to parse as JSON (list or jsonl)
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        data = None
+
+    if isinstance(data, list):
+        for item in data:
+            rows.append(item)
+        return rows
+
+    if isinstance(data, dict):
+        possible = data.get("metadata")
+        if isinstance(possible, list):
+            rows.extend(possible)
+            return rows
+
+    json_lines = []
+    json_lines_failed = False
+    for line in stripped.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            json_lines.append(json.loads(line))
+        except json.JSONDecodeError:
+            json_lines_failed = True
+            break
+    if json_lines and not json_lines_failed:
+        rows.extend(json_lines)
+        return rows
+
+    # Fallback to CSV-like structure.
+    lines = [line for line in stripped.splitlines() if line.strip()]
+    if not lines:
+        return rows
+
+    delimiters = ["|", ",", "\t", ";"]
+    chosen = None
+    for delimiter in delimiters:
+        if delimiter in lines[0]:
+            chosen = delimiter
+            break
+    if chosen is None:
+        chosen = ","
+
+    reader = csv.DictReader(io.StringIO(stripped), delimiter=chosen)
+    if reader.fieldnames and all(name.strip() for name in reader.fieldnames):
+        for row in reader:
+            rows.append({k.strip(): v for k, v in row.items()})
+        return rows
+
+    # No header present, interpret each row manually.
+    for line in lines:
+        parts = [part.strip() for part in line.split(chosen)]
+        if len(parts) >= 2:
+            entry = {
+                "audio_file": parts[0],
+                "text": chosen.join(parts[1:]).strip(),
+            }
+            if len(parts) >= 3:
+                entry["speaker_name"] = parts[2]
+            rows.append(entry)
+
+    return rows
+
+
+def _normalize_row(row):
+    if isinstance(row, (list, tuple)):
+        audio = row[0] if len(row) >= 1 else None
+        text = row[1] if len(row) >= 2 else None
+        speaker = row[2] if len(row) >= 3 else ""
+    elif isinstance(row, dict):
+        audio_keys = [
+            "audio_file",
+            "audio_filepath",
+            "audio_path",
+            "path",
+            "wav",
+            "wav_path",
+        ]
+        text_keys = [
+            "text",
+            "sentence",
+            "transcription",
+            "normalized_text",
+            "normalized_text_with_punctuation",
+        ]
+        speaker_keys = [
+            "speaker_name",
+            "speaker",
+            "speaker_id",
+            "speaker_ids",
+            "spk",
+        ]
+        audio = next((row.get(key) for key in audio_keys if row.get(key)), None)
+        text = next((row.get(key) for key in text_keys if row.get(key)), None)
+        speaker = next((row.get(key) for key in speaker_keys if row.get(key)), "")
+    else:
+        return None
+
+    if not audio or not text:
+        return None
+
+    return {
+        "audio_file": str(audio),
+        "text": str(text),
+        "speaker_name": str(speaker) if speaker is not None else "",
+    }
+
+
+def _normalize_metadata_file(metadata_path):
+    if not metadata_path or not os.path.isfile(metadata_path):
+        return metadata_path
+
+    try:
+        with open(metadata_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+
+        raw_rows = _read_rows_from_metadata(content)
+        normalized_rows = []
+        for row in raw_rows:
+            normalized = _normalize_row(row)
+            if normalized:
+                normalized_rows.append(normalized)
+
+        if not normalized_rows:
+            return metadata_path
+
+        with open(metadata_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=["audio_file", "text", "speaker_name"],
+                delimiter="|",
+                quoting=csv.QUOTE_MINIMAL,
+            )
+            writer.writeheader()
+            for row in normalized_rows:
+                writer.writerow(row)
+    except Exception:
+        traceback.print_exc()
+
+    return metadata_path
 
 
 def load_model(xtts_checkpoint, xtts_config, xtts_vocab):
@@ -197,6 +367,7 @@ def main_ui():
             clear_gpu_cache()
             out_path = os.path.join(out_path, "dataset")
             os.makedirs(out_path, exist_ok=True)
+            progress_adapter = _ProgressAdapter(progress) if progress else None
             if audio_path is None:
                 return (
                     "You should provide one or multiple audio files! If you provided it, probably the upload of the files is not finished yet!",
@@ -209,7 +380,7 @@ def main_ui():
                         audio_path,
                         target_language=language,
                         out_path=out_path,
-                        gradio_progress=progress,
+                        gradio_progress=progress_adapter,
                     )
                 except:
                     traceback.print_exc()
@@ -298,6 +469,8 @@ def main_ui():
                     "",
                 )
             try:
+                train_csv = _normalize_metadata_file(train_csv)
+                eval_csv = _normalize_metadata_file(eval_csv)
                 # convert seconds to waveform frames
                 max_audio_length = int(max_audio_length * 22050)
                 (
