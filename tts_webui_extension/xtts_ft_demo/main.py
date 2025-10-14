@@ -238,7 +238,7 @@ def main_ui():
                         out_path=out_path,
                         gradio_progress=None,
                     )
-                    # Автоматически фиксируем формат после препроцессинга
+                    # Automatically fix the format after preprocessing
                     train_meta = fix_csv_delimiters(train_meta)
                     eval_meta = fix_csv_delimiters(eval_meta)
                 except:
