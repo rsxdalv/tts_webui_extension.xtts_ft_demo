@@ -293,7 +293,7 @@ def main_ui():
                     "",
                 )
             try:
-                # Автоматически фиксируем формат перед обучением
+                # Automatically fix the format before training
                 train_csv = fix_csv_delimiters(train_csv)
                 eval_csv = fix_csv_delimiters(eval_csv)
                 max_audio_length = int(max_audio_length * 22050)
